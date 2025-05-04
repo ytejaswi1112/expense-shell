@@ -3,7 +3,7 @@
 USERID=$(id -u)
 TIMESTAMP=$(date +%F-%H-%M-%S)
 SCRIPT_NAME=$(echo $0 | cut -d "." -f1)
-LOGFILE=/tmp/$SCRIPT_NAME-$TIMESTAMP.log
+LOGFILE=/tmp/abc-$TIMESTAMP.log
 R="\e[31m"
 G="\e[32m"
 Y="\e[33m"
@@ -50,4 +50,4 @@ then
     VALIDATE $? "MySQL Root password Setup"
 else
     echo -e "MySQL Root password is already setup...$Y SKIPPING $N"
-fi
+fi  
