@@ -10,26 +10,26 @@ G="\e[32m"
 Y="\e[33m"
 N="\e[0m"
 
-echo "Please enter MySQL root password you want to set:"
+echo -e "Please enter MySQL root password you want to set:"
 read -s mysql_root_password
 
 VALIDATE() {
-    if [ $1 -ne 0 ]; then
+   if [ $1 -ne 0 ]; then
         echo -e "$2...$R FAILURE $N"
         exit 1
-    else
+   else
         echo -e "$2...$G SUCCESS $N"
-    fi
+   fi
 }
 
 if [ "$USERID" -ne 0 ]; then
-    echo -e "$R Please run this script with root access. $N"
+    echo -e "${R}Please run this script with root access.${N}"
     exit 1
 else
-    echo -e "$G You are super user. $N"
+    echo -e "You are super user."
 fi
 
-echo -e "$Y Installing MySQL Server... $N"
+echo -e "Installing MySQL Server..."
 dnf install mysql-server -y &>>"$LOGFILE"
 VALIDATE $? "Installing MySQL Server"
 
@@ -39,8 +39,12 @@ VALIDATE $? "Enabling MySQL Service"
 systemctl start mysqld &>>"$LOGFILE"
 VALIDATE $? "Starting MySQL Service"
 
-# Check if the root password already works
-mysql -uroot -p"${mysql_root_password}" -e "SHOW DATABASES;" &>>"$LOGFILE"
+echo -e "Verifying MySQL Service Status..."
+systemctl is-active --quiet mysqld
+VALIDATE $? "MySQL Service Status"
+
+# Try logging in with provided password
+mysql -u root -p"${mysql_root_password}" -e "SHOW DATABASES;" &>>"$LOGFILE"
 if [ $? -ne 0 ]; then
     echo -e "$Y MySQL root password doesn't work. Attempting reset... $N"
 
@@ -52,6 +56,12 @@ if [ $? -ne 0 ]; then
     mysqld_safe --skip-grant-tables &>>"$LOGFILE" &
     sleep 5
 
+    for i in {1..10}; do
+        mysqladmin ping &>/dev/null && break
+        echo "Waiting for MySQL to be ready ($i/10)..."
+        sleep 2
+    done
+
     echo -e "$Y Resetting root password... $N"
     mysql -uroot <<EOF &>>"$LOGFILE"
 FLUSH PRIVILEGES;
@@ -59,12 +69,14 @@ ALTER USER 'root'@'localhost' IDENTIFIED BY '${mysql_root_password}';
 EOF
     VALIDATE $? "Resetting MySQL root password"
 
+    echo -e "$Y Killing MySQL safe mode... $N"
     pkill -f mysqld_safe &>>"$LOGFILE"
-    sleep 3
+    pkill -f mysqld &>>"$LOGFILE"
+    sleep 5
 
     echo -e "$Y Restarting MySQL normally... $N"
     systemctl start mysqld &>>"$LOGFILE"
     VALIDATE $? "Restarting MySQL"
 else
-    echo -e "MySQL root password already set...$Y SKIPPING PASSWORD RESET $N"
+    echo -e "MySQL root password is already working...$Y SKIPPING RESET $N"
 fi
