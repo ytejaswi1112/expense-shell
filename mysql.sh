@@ -1,66 +1,70 @@
 #!/bin/bash
 
-# Variables
 USERID=$(id -u)
 TIMESTAMP=$(date +%F-%H-%M-%S)
 SCRIPT_NAME=$(basename "$0" | cut -d "." -f1)
 LOGFILE="/tmp/${SCRIPT_NAME}-${TIMESTAMP}.log"
+
 R="\e[31m"
 G="\e[32m"
 Y="\e[33m"
 N="\e[0m"
 
-# Prompt for MySQL root password
-echo "Please enter MySQL root password:"
+echo "Please enter MySQL root password you want to set:"
 read -s mysql_root_password
 
-# Function to validate the previous command's status
 VALIDATE() {
-  if [ $1 -ne 0 ]; then
-    echo -e "$2...$R FAILURE $N"
-    echo "$2... FAILURE" >> "$LOGFILE"
-    exit 1
-  else
-    echo -e "$2...$G SUCCESS $N"
-    echo "$2... SUCCESS" >> "$LOGFILE"
-  fi
+    if [ $1 -ne 0 ]; then
+        echo -e "$2...$R FAILURE $N"
+        exit 1
+    else
+        echo -e "$2...$G SUCCESS $N"
+    fi
 }
 
-# Ensure the script is run as root
 if [ "$USERID" -ne 0 ]; then
-  echo -e "$R Please run this script as root user $N"
-  exit 1
+    echo -e "$R Please run this script with root access. $N"
+    exit 1
+else
+    echo -e "$G You are super user. $N"
 fi
 
-echo -e "$G You are running as root user. $N"
-
-# Install MySQL server
-dnf install mysql-server -y &>> "$LOGFILE"
+echo -e "$Y Installing MySQL Server... $N"
+dnf install mysql-server -y &>>"$LOGFILE"
 VALIDATE $? "Installing MySQL Server"
 
-# Enable and start MySQL service
-systemctl enable mysqld &>> "$LOGFILE"
+systemctl enable mysqld &>>"$LOGFILE"
 VALIDATE $? "Enabling MySQL Service"
 
-systemctl start mysqld &>> "$LOGFILE"
+systemctl start mysqld &>>"$LOGFILE"
 VALIDATE $? "Starting MySQL Service"
 
-# Check if MySQL is active
-systemctl is-active --quiet mysqld
-VALIDATE $? "Verifying MySQL Service Status"
-
-# Try connecting to MySQL using the given password
-mysql -u root -p"${mysql_root_password}" -e "SHOW DATABASES;" &>> "$LOGFILE"
+# Check if the root password already works
+mysql -uroot -p"${mysql_root_password}" -e "SHOW DATABASES;" &>>"$LOGFILE"
 if [ $? -ne 0 ]; then
-  echo "Setting up root password..."
-  temp_pass=$(grep 'temporary password' /var/log/mysqld.log | tail -1 | awk '{print $NF}')
+    echo -e "$Y MySQL root password doesn't work. Attempting reset... $N"
 
-  mysql --connect-expired-password -u root -p"${temp_pass}" <<EOF &>> "$LOGFILE"
+    echo -e "$Y Stopping MySQL for reset... $N"
+    systemctl stop mysqld &>>"$LOGFILE"
+    VALIDATE $? "Stopping MySQL"
+
+    echo -e "$Y Starting MySQL in skip-grant-tables mode... $N"
+    mysqld_safe --skip-grant-tables &>>"$LOGFILE" &
+    sleep 5
+
+    echo -e "$Y Resetting root password... $N"
+    mysql -uroot <<EOF &>>"$LOGFILE"
+FLUSH PRIVILEGES;
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${mysql_root_password}';
-UNINSTALL COMPONENT 'file://component_validate_password';
 EOF
+    VALIDATE $? "Resetting MySQL root password"
 
-  VALIDATE $? "Setting up new MySQL root password"
+    pkill -f mysqld_safe &>>"$LOGFILE"
+    sleep 3
+
+    echo -e "$Y Restarting MySQL normally... $N"
+    systemctl start mysqld &>>"$LOGFILE"
+    VALIDATE $? "Restarting MySQL"
 else
-  echo -e "MySQL root password already set...$Y SKIPPING PASSWORD SETUP $N"
+    echo -e "MySQL root password already set...$Y SKIPPING PASSWORD RESET $N"
 fi
