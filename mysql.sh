@@ -52,26 +52,19 @@ if [ $? -ne 0 ]; then
     systemctl stop mysqld &>>"$LOGFILE"
     VALIDATE $? "Stopping MySQL"
 
-    echo -e "$Y Starting MySQL in skip-grant-tables mode... $N"
-    mysqld_safe --skip-grant-tables &>>"$LOGFILE" &
+    echo -e "$Y Starting MySQL manually in skip-grant-tables mode... $N"
+    /usr/libexec/mysqld --skip-grant-tables --skip-networking &>>"$LOGFILE" &
     sleep 5
 
-    for i in {1..10}; do
-        mysqladmin ping &>/dev/null && break
-        echo "Waiting for MySQL to be ready ($i/10)..."
-        sleep 2
-    done
-
     echo -e "$Y Resetting root password... $N"
-    mysql -uroot <<EOF &>>"$LOGFILE"
+    mysql -u root <<EOF &>>"$LOGFILE"
 FLUSH PRIVILEGES;
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${mysql_root_password}';
 EOF
     VALIDATE $? "Resetting MySQL root password"
 
-    echo -e "$Y Killing MySQL safe mode... $N"
-    pkill -f mysqld_safe &>>"$LOGFILE"
-    pkill -f mysqld &>>"$LOGFILE"
+    echo -e "$Y Killing skip-grant-tables process... $N"
+    pkill -f mysqld
     sleep 5
 
     echo -e "$Y Restarting MySQL normally... $N"
